@@ -1,0 +1,14 @@
+{
+  "name": "markdown-local-check",
+  "version": "0.1.0",
+  "description": "Check Markdown documents for broken local file links and missing images, offline.",
+  "type": "module",
+  "private": true,
+  "bin": { "markdown-local-check": "./src/cli.js" },
+  "scripts": {
+    "test": "node --test",
+    "check": "node src/cli.js ."
+  },
+  "engines": { "node": ">=22" },
+  "license": "MIT"
+}
