@@ -1,5 +1,6 @@
-import { access, readdir, readFile } from 'node:fs/promises';
+import { stat, readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
+import { readRepository, repositoryPath, cloneProblem } from './git.js';
 
 const excluded = new Set(['.git', 'node_modules', '.cache']);
 
@@ -84,7 +85,7 @@ export function extractLinks(markdown) {
   return links;
 }
 
-export async function checkFile(file, root) {
+export async function checkFile(file, root, repository) {
   const links = extractLinks(await readFile(file, 'utf8'));
   const issues = [];
   let checked = 0;
@@ -103,10 +104,16 @@ export async function checkFile(file, root) {
     const absolute = localPath.startsWith('/')
       ? path.resolve(root, `.${localPath}`)
       : path.resolve(path.dirname(file), localPath);
-    try { await access(absolute); }
+    let info;
+    try { info = await stat(absolute); }
     catch (error) {
       if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
       issues.push({ file, line, target, reason: 'target does not exist' });
+      continue;
+    }
+    if (repository) {
+      const reason = await cloneProblem(repository, absolute, info.isDirectory());
+      if (reason) issues.push({ file, line, target, reason });
     }
   }
   return { checked, issues };
@@ -123,15 +130,24 @@ async function markdownFiles(directory) {
   return files.sort();
 }
 
-export async function checkDirectory(directory) {
-  const root = path.resolve(directory);
-  const files = await markdownFiles(root);
+export async function checkDirectory(directory, { freshClone = false } = {}) {
+  const root = await realpath(path.resolve(directory));
+  const repository = freshClone ? await readRepository(root) : null;
+  let files = await markdownFiles(root);
+  if (repository) {
+    files = files.filter(file => {
+      const mode = repository.committed.get(repositoryPath(repository, file));
+      return mode === '100644' || mode === '100755';
+    });
+  }
   let checked = 0;
   const issues = [];
   for (const file of files) {
-    const result = await checkFile(file, root);
+    const result = await checkFile(file, root, repository);
     checked += result.checked;
     issues.push(...result.issues.map(issue => ({ ...issue, file: path.relative(root, issue.file).split(path.sep).join('/') })));
   }
-  return { files: files.length, checked, issues };
+  const result = { files: files.length, checked, issues };
+  if (repository) result.commit = repository.commit;
+  return result;
 }
