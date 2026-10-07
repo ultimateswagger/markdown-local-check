@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -65,6 +65,44 @@ test('distinguishes directories with committed contents from empty local directo
   assert.equal(result.issues.length, 1);
   assert.equal(result.issues[0].target, 'empty/');
   assert.equal(result.issues[0].reason, 'directory has no committed files');
+});
+
+test('identifies committed symlinks at and above a linked target', { skip: process.platform === 'win32' }, async t => {
+  const root = await repository(t, {
+    'README.md': '[link](docs/shortcut)\n[folder](docs/shortcut/)\n[nested](docs/shortcut/guide.md)\n[ordinary](docs/real/guide.md)\n[similar](docs/shortcut-extra/guide.md)',
+    'docs/real/guide.md': '', 'docs/shortcut-extra/guide.md': '',
+  });
+  await symlink('real', path.join(root, 'docs/shortcut'));
+  git(root, 'add', '--', 'docs/shortcut');
+  commit(root);
+  assert.deepEqual((await checkDirectory(root)).issues, []);
+  const result = await checkDirectory(root, { freshClone: true });
+  assert.equal(result.checked, 5);
+  assert.deepEqual(result.issues.map(x => [x.line, x.target, x.reason]), [
+    [1, 'docs/shortcut', 'symbolic link needs a separate target check'],
+    [2, 'docs/shortcut/', 'symbolic link needs a separate target check'],
+    [3, 'docs/shortcut/guide.md', 'symbolic link needs a separate target check'],
+  ]);
+});
+
+test('identifies committed submodules at and above a linked target', async t => {
+  const root = await repository(t, {
+    'README.md': '[module](vendor/component)\n[folder](vendor/component/)\n[nested](vendor/component/docs/guide.md)\n[similar](vendor/component-extra/guide.md)',
+    'vendor/component-extra/guide.md': '',
+  });
+  // Record a gitlink without a remote or a submodule checkout command.
+  const head = git(root, 'rev-parse', 'HEAD').trim();
+  git(root, 'update-index', '--add', '--cacheinfo', `160000,${head},vendor/component`);
+  commit(root);
+  await write(root, 'vendor/component/docs/guide.md');
+  assert.deepEqual((await checkDirectory(root)).issues, []);
+  const result = await checkDirectory(root, { freshClone: true });
+  assert.equal(result.checked, 4);
+  assert.deepEqual(result.issues.map(x => [x.line, x.target, x.reason]), [
+    [1, 'vendor/component', 'submodule needs a separate checkout'],
+    [2, 'vendor/component/', 'submodule needs a separate checkout'],
+    [3, 'vendor/component/docs/guide.md', 'submodule needs a separate checkout'],
+  ]);
 });
 
 test('works from a repository subfolder and handles filenames with spaces', async t => {

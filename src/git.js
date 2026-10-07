@@ -47,10 +47,14 @@ export async function cloneProblem(repository, absolute, isDirectory) {
   const relative = repositoryPath(repository, absolute);
   if (relative === null) return 'target is outside the repository';
 
-  const mode = repository.committed.get(relative);
-  if (mode === '120000') return 'symbolic link needs a separate target check';
-  if (mode === '160000') return 'submodule needs a separate checkout';
-  if (mode) return null;
+  // A symlink or gitlink is stored only at its boundary, not at descendant paths.
+  // Detect those boundaries before asking Git about ignores inside them.
+  for (let entry = relative; entry && entry !== '.'; entry = path.posix.dirname(entry)) {
+    const mode = repository.committed.get(entry);
+    if (mode === '120000') return 'symbolic link needs a separate target check';
+    if (mode === '160000') return 'submodule needs a separate checkout';
+  }
+  if (repository.committed.has(relative)) return null;
 
   // Git stores files, not directories. A directory survives only if it has committed contents.
   const prefix = relative ? `${relative}/` : '';
