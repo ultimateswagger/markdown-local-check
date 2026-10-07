@@ -46,7 +46,7 @@ For example, a README links to a local screenshot, but `.gitignore` excludes the
 README.md:12: target exists locally but is ignored by Git: screenshots/setup.png
 ```
 
-Other reports distinguish files that have not been committed, files staged for the next commit, empty directories, and targets outside the repository. A directory is available only if it contains committed files; Git does not store empty directories. Symbolic links and submodules are reported as needing a separate check or checkout.
+Other reports distinguish files that have not been committed, files staged for the next commit, empty directories, and targets outside the repository. A directory is available only if it contains committed files; Git does not store empty directories. Symbolic links and submodules, including targets inside them, are reported as needing a separate check or checkout.
 
 For this repository, use `npm run check:clone`. Combine `--fresh-clone` with `--json` to include the checked commit hash in structured output.
 
